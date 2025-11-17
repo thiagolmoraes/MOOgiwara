@@ -1,0 +1,67 @@
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: moogiwara-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
+      - MONGO_INITDB_DATABASE=moogiwara_test
+    networks:
+      - moogiwara-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: moogiwara-server
+    ports:
+      - "3001:3000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - moogiwara-network
+    environment:
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://admin:password@mongodb:27017/moogiwara_test?authSource=admin
+      - PORT=3000
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: moogiwara-client
+    ports:
+      - "8888:8000"
+    depends_on:
+      - server
+    networks:
+      - moogiwara-network
+    environment:
+      - NODE_ENV=development
+      - VITE_SERVER_URL=http://localhost:3001
+      - PORT=8000
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+networks:
+  moogiwara-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:

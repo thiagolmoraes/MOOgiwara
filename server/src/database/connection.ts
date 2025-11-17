@@ -2,13 +2,13 @@ import { connect } from 'mongoose';
 
 import { IPlayerData, PlayerData } from './player_data_model';
 
-// Omitting users/authentication, authorisation/privileges setting for testbench:
-const mongoDB = "mongodb://127.0.0.1:27017/moogiwara_test";
-// const mongoDB = "mongodb://username:password@127.0.0.1:PORT/moogiwara_prod";
+// Use environment variable for MongoDB connection, fallback to default for local development
+const mongoDB = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/moogiwara_test";
 
 export async function connectToDB() {
     try {
         await connect(mongoDB);
+        console.log('[LOG] Successfully connected to MongoDB');
     } catch (error) {
         console.log('[ERROR] UNABLE TO CONNECT TO DATABASE');
         console.error(error);

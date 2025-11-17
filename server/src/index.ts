@@ -1,6 +1,9 @@
 import express, { Express } from 'express';
 import { createServer } from 'http';
 import { Socket, Server } from 'socket.io';
+import { existsSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import Player from './game/player';
 // @ts-ignore
 import testDeck from './cards/test_deck.json' assert { type: "json" };
@@ -15,7 +18,19 @@ import { getRandomName } from './util/utils';
 
 const app: Express = express();
 
-app.use(express.static('../client/dist'));
+// Get __dirname equivalent for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Serve static files from client/dist if it exists (for production)
+// In development, the client runs its own dev server
+const clientDistPath = join(__dirname, '../../client/dist');
+if (existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  console.log('[INFO] Serving static files from client/dist');
+} else {
+  console.log('[INFO] Client dist not found, assuming development mode');
+}
 
 const server = createServer(app);
 
@@ -72,26 +87,33 @@ function findMatch(socketId: string): string {
 
 function startGame(lobbyId: string): void {
   const game = games.get(lobbyId);
+  console.log(`[GAME] Attempting to start game ${lobbyId}, isFull: ${game?.isFull()}`);
   if (game?.isFull()) {
     // Start the game
     const playerWhoStartsFirst = Math.floor(Math.random() * 2) + 1;
     game.whoseTurn = playerWhoStartsFirst;
-    game.playerOne?.client.emit('start', {
-      name: game.playerOne.username,
+    const startDataOne = {
+      name: game.playerOne?.username,
       opponentName: game.playerTwo?.username,
       lobbyId: lobbyId,
       deckList: testDeck["blue"],
       opponentDeckList: testDeck["blue"]
-    });
-    game.playerTwo?.client.emit('start', {
-      name: game.playerTwo.username,
+    };
+    const startDataTwo = {
+      name: game.playerTwo?.username,
       opponentName: game.playerOne?.username,
       lobbyId: lobbyId,
       deckList: testDeck["blue"],
       opponentDeckList: testDeck["blue"]
-    });
+    };
+    console.log(`[GAME] Sending start packet to player one:`, startDataOne);
+    console.log(`[GAME] Sending start packet to player two:`, startDataTwo);
+    game.playerOne?.client.emit('start', startDataOne);
+    game.playerTwo?.client.emit('start', startDataTwo);
     game.start();
     console.log("[LOG] Game started: " + lobbyId);
+  } else {
+    console.log(`[GAME] Game ${lobbyId} not full yet. Players: ${game?.playerOne ? 1 : 0}/${game?.playerTwo ? 1 : 0}`);
   }
 }
 
@@ -113,7 +135,14 @@ function startQueuing(player: Player): void {
 
 app.get('/', (req, res) => {
   console.log(req);
-  res.sendFile("../client/dist/index.html");
+  // Only serve index.html if client/dist exists (production mode)
+  // In development, the client dev server handles this
+  const indexPath = join(clientDistPath, 'index.html');
+  if (existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.send('MOOgiwara Game Server is running. Client should be accessed separately in development mode.');
+  }
 });
 
 io.on('connection', (socket: Socket) => {
@@ -172,6 +201,7 @@ io.on('connection', (socket: Socket) => {
 
   // Game-related packets ------------------------------
   socket.on('queue', () => {
+    console.log(`[QUEUE] User ${userId} (${player.username || 'guest'}) requested to queue`);
     startQueuing(player);
     if (player.game) {
       game = player.game;
